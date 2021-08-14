@@ -8,5 +8,5 @@ towards a stable implementation.
 
 ## API
 
-* [dirname](https://nodejs.org/api/path.html#path_path_dirname_path).
-* [isAbsolute](https://nodejs.org/api/path.html#path_path_isabsolute_path).
+* [dirname](https://nodejs.org/api/path.html#path_path_dirname_path) (posix).
+* [isAbsolute](https://nodejs.org/api/path.html#path_path_isabsolute_path) (posix).
