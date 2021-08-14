@@ -1,0 +1,32 @@
+on:
+   push:
+     branches:
+       - main
+name: release-please
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: bcoe/release-please-action@v2
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          release-type: node
+          package-name: path-buffer
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v1
+        with:
+          node-version: 14
+      - run: npm install
+      - run: npm run compile
+      - uses: actions/setup-node@v1
+        with:
+          node-version: 14
+          registry-url: 'https://external-dot-oss-automation.appspot.com/'
+        if: ${{ steps.release.outputs.release_created }}
+      - run: npm install
+        if: ${{ steps.release.outputs.release_created }}
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
+        if: ${{ steps.release.outputs.release_created }}
