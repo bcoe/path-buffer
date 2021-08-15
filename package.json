@@ -1,6 +1,6 @@
 {
   "name": "path-buffer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Node.js' path module, but for buffers",
   "main": "path-buffer.js",
   "index": "path-buffer.js",
