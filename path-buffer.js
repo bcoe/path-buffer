@@ -8,23 +8,77 @@ function isPosixPathSeparator(code) {
   return code === CHAR_CODE_FORWARD_SLASH;
 }
 
-function bufferLastIndexOf(buffer, charCode) {
-  for (let i = buffer.length - 1; i >= 0; i--) {
-    if (buffer[i] === charCode) return i;
+// Wrapped buffer providing support for utf8 and utf16le encoded paths:
+class WrappedBuffer {
+  #buf = null;
+  #detectEncoding = (buf) => {
+    let encoding = 'utf8';
+    if (buf.length >= 2 && (buf.length % 2) === 0) {
+      if (buf[buf.length - 1] === 0) {
+        encoding = 'utf16le';
+      }
+    }
+    return encoding;
+  };
+  constructor(buf, encoding) {
+    this.#buf = buf;
+    this.encoding = encoding ?? this.#detectEncoding(buf);
   }
-  return -1;
+  static concat = (bufs) => {
+    const unwrappedBuffers = [];
+    for (const buf of bufs) {
+      if (buf instanceof WrappedBuffer) {
+        unwrappedBuffers.push(buf.buffer);
+      } else {
+        unwrappedBuffers.push(buf);;
+      }
+    }
+    return WrappedBuffer.from(Buffer.concat(unwrappedBuffers));
+  }
+  static from = (buf, encoding) => {
+    return new WrappedBuffer(Buffer.from(buf, encoding));
+  }
+  charCodeAt(i) {
+    if (this.encoding === 'utf16le') {
+      i *= 2;
+      // Handle both LE and BE case:
+      return this.#buf[i] ? this.#buf[i] : this.#buf[i + 1]
+    } else {
+      return this.#buf[i];
+    }
+  }
+  lastIndexOf(charCode) {
+    for (let i  = this.length - 1; i >= 0; i--) {
+      if (this.charCodeAt(i) === charCode) return i;
+    }
+    return -1;
+  }
+  slice(start, end) {
+    if (this.encoding === 'utf16le') {
+      start *= 2;
+      end *= 2;
+    }
+    return WrappedBuffer.from(this.#buf.slice(start, end));
+  }
+  get buffer() {
+    return Buffer.from(this.#buf);
+  }
+  get length() {
+    if (this.encoding === 'utf16le') return this.#buf.length / 2;
+    else return this.#buf.length;
+  }
 }
 
 // Resolves . and .. elements in a path with directory names
 function normalizeString(path, allowAboveRoot, separator, separatorCode, isPathSeparator) {
-  let res = Buffer.from('');
+  let res = WrappedBuffer.from('', path.encoding);
   let lastSegmentLength = 0;
   let lastSlash = -1;
   let dots = 0;
   let code = 0;
   for (let i = 0; i <= path.length; ++i) {
     if (i < path.length)
-      code = path[i];
+      code = path.charCodeAt(i);
     else if (isPathSeparator(code))
       break;
     else
@@ -35,23 +89,23 @@ function normalizeString(path, allowAboveRoot, separator, separatorCode, isPathS
         // NOOP
       } else if (dots === 2) {
         if (res.length < 2 || lastSegmentLength !== 2 ||
-            res[res.length - 1] !== CHAR_CODE_DOT ||
-            res[res.length - 2] !== CHAR_CODE_DOT) {
+            res.charCodeAt(res.length - 1) !== CHAR_CODE_DOT ||
+            res.charCodeAt(res.length - 2) !== CHAR_CODE_DOT) {
           if (res.length > 2) {
-            const lastSlashIndex = bufferLastIndexOf(res, separatorCode);
+            const lastSlashIndex = res.lastIndexOf(separatorCode);
             if (lastSlashIndex === -1) {
-              res = Buffer.from('');
+              res = WrappedBuffer.from('', path.encoding);
               lastSegmentLength = 0;
             } else {
               res = res.slice(0, lastSlashIndex);
               lastSegmentLength =
-                res.length - 1 - bufferLastIndexOf(res, separatorCode);
+                res.length - 1 - res.lastIndexOf(separatorCode);
             }
             lastSlash = i;
             dots = 0;
             continue;
           } else if (res.length !== 0) {
-            res = Buffer.from('');
+            res = WrappedBuffer.from('', path.encoding);
             lastSegmentLength = 0;
             lastSlash = i;
             dots = 0;
@@ -59,16 +113,16 @@ function normalizeString(path, allowAboveRoot, separator, separatorCode, isPathS
           }
         }
         if (allowAboveRoot) {
-          res = Buffer.concat(
+          res = WrappedBuffer.concat(
             res.length > 0 ? 
-              [res, separator, Buffer.from('..')] :
-              [res, Buffer.from('..')]
+              [res, separator, WrappedBuffer.from('..', path.encoding)] :
+              [res, WrappedBuffer.from('..', path.encoding)]
           );
           lastSegmentLength = 2;
         }
       } else {
         if (res.length > 0) {
-          res = Buffer.concat([res, separator, path.slice(lastSlash + 1, i)])
+          res = WrappedBuffer.concat([res, separator, path.slice(lastSlash + 1, i)])
         } else {
           res = path.slice(lastSlash + 1, i);
         }
@@ -94,11 +148,12 @@ const posix = {
     assert(isUint8Array(path));
     if (path.length === 0)
       return Buffer.from('.');
-    const hasRoot = path[0] === CHAR_CODE_FORWARD_SLASH;
+    path = WrappedBuffer.from(path);
+    const hasRoot = path.charCodeAt(0) === CHAR_CODE_FORWARD_SLASH;
     let end = -1;
     let matchedSlash = true;
     for (let i = path.length - 1; i >= 1; --i) {
-      if (path[i] === CHAR_CODE_FORWARD_SLASH) {
+      if (path.charCodeAt(i) === CHAR_CODE_FORWARD_SLASH) {
         if (!matchedSlash) {
           end = i;
           break;
@@ -113,7 +168,7 @@ const posix = {
       return hasRoot ? Buffer.from('/') : Buffer.from('.');
     if (hasRoot && end === 1)
       return Buffer.from('//');
-    return path.slice(0, end);
+    return path.slice(0, end).buffer;
   },
   /**
    * @param {Buffer} path
@@ -121,7 +176,8 @@ const posix = {
    */
   isAbsolute(path) {
     assert(isUint8Array(path));
-    return path.length > 0 && path[0] === CHAR_CODE_FORWARD_SLASH;
+    path = WrappedBuffer.from(path);
+    return path.length > 0 && path.charCodeAt(0) === CHAR_CODE_FORWARD_SLASH;
   },
   /**
    * @param {...Buffer} args
@@ -135,6 +191,7 @@ const posix = {
       const arg = args[i];
       assert(isUint8Array(arg));
       if (arg.length > 0) {
+        // TODO: if utf16le components are being appended detect this.
         if (joined === undefined)
           joined = arg;
         else
@@ -154,28 +211,35 @@ const posix = {
 
     if (path.length === 0)
       return Buffer.from('.');
+    path = WrappedBuffer.from(path);
 
-    const isAbsolute = path[0] === CHAR_CODE_FORWARD_SLASH;
-    const trailingSeparator = path[path.length - 1] === CHAR_CODE_FORWARD_SLASH;
+    const isAbsolute = path.charCodeAt(0) === CHAR_CODE_FORWARD_SLASH;
+    const trailingSeparator = path.charCodeAt(path.length - 1) === CHAR_CODE_FORWARD_SLASH;
 
     // Normalize the path
     path = normalizeString(
       path,
       !isAbsolute,
-      Buffer.from('/'),
+      WrappedBuffer.from('/', path.encoding),
       CHAR_CODE_FORWARD_SLASH,
       isPosixPathSeparator
     );
 
     if (path.length === 0) {
       if (isAbsolute)
-        return Buffer.from('/');
-      return trailingSeparator ? Buffer.from('./') : Buffer.from('.');
+        return WrappedBuffer.from('/', path.encoding).buffer;
+      return trailingSeparator ?
+        WrappedBuffer.from('./', path.encoding).buffer :
+        WrappedBuffer.from('.', path.encoding).buffer;
     }
     if (trailingSeparator)
-      path = Buffer.concat([path, Buffer.from('/')]);
+      path = WrappedBuffer.concat([
+        path, WrappedBuffer.from('/', path.encoding)
+      ]);
 
-    return isAbsolute ? Buffer.concat([Buffer.from('/'), path]) : path;
+    return isAbsolute ?
+      WrappedBuffer.concat([WrappedBuffer.from('/', path.encoding), path]).buffer :
+      path.buffer;
   },
   sep: '/',
 };

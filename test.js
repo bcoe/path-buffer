@@ -130,37 +130,38 @@ assert.strictEqual(failures.length, 0, failures.join(''));
 // Test normalize().
 
 const normalizeOriginal = path.posix.normalize;
-path.posix.normalize = (path) => {
-  const p = normalizeOriginal(Buffer.from(path));
-  return p.toString();
+for (const encoding of ['utf8', 'utf16le']) {
+  path.posix.normalize = (path) => {
+    const p = normalizeOriginal(Buffer.from(path, encoding));
+    return p.toString(encoding);
+  }
+  assert.strictEqual(path.posix.normalize('./fixtures///b/../b/c.js'),
+                    'fixtures/b/c.js');
+  assert.strictEqual(path.posix.normalize('/foo/../../../bar'), '/bar');
+  assert.strictEqual(path.posix.normalize('a//b//../b'), 'a/b');
+  assert.strictEqual(path.posix.normalize('a//b//./c'), 'a/b/c');
+  assert.strictEqual(path.posix.normalize('a//b//.'), 'a/b');
+  assert.strictEqual(path.posix.normalize('/a/b/c/../../../x/y/z'), '/x/y/z');
+  assert.strictEqual(path.posix.normalize('///..//./foo/.//bar'), '/foo/bar');
+  assert.strictEqual(path.posix.normalize('bar/foo../../'), 'bar/');
+  assert.strictEqual(path.posix.normalize('bar/foo../..'), 'bar');
+  assert.strictEqual(path.posix.normalize('bar/foo../../baz'), 'bar/baz');
+  assert.strictEqual(path.posix.normalize('bar/foo../'), 'bar/foo../');
+  assert.strictEqual(path.posix.normalize('bar/foo..'), 'bar/foo..');
+  assert.strictEqual(path.posix.normalize('../foo../../../bar'), '../../bar');
+  assert.strictEqual(path.posix.normalize('../.../.././.../../../bar'),
+                    '../../bar');
+  assert.strictEqual(path.posix.normalize('../../../foo/../../../bar'),
+                    '../../../../../bar');
+  assert.strictEqual(path.posix.normalize('../../../foo/../../../bar/../../'),
+                    '../../../../../../');
+  assert.strictEqual(
+    path.posix.normalize('../foobar/barfoo/foo/../../../bar/../../'),
+    '../../'
+  );
+  assert.strictEqual(
+    path.posix.normalize('../.../../foobar/../../../bar/../../baz'),
+    '../../../../baz'
+  );
+  assert.strictEqual(path.posix.normalize('foo/bar\\baz'), 'foo/bar\\baz');
 }
-
-assert.strictEqual(path.posix.normalize('./fixtures///b/../b/c.js'),
-                   'fixtures/b/c.js');
-assert.strictEqual(path.posix.normalize('/foo/../../../bar'), '/bar');
-assert.strictEqual(path.posix.normalize('a//b//../b'), 'a/b');
-assert.strictEqual(path.posix.normalize('a//b//./c'), 'a/b/c');
-assert.strictEqual(path.posix.normalize('a//b//.'), 'a/b');
-assert.strictEqual(path.posix.normalize('/a/b/c/../../../x/y/z'), '/x/y/z');
-assert.strictEqual(path.posix.normalize('///..//./foo/.//bar'), '/foo/bar');
-assert.strictEqual(path.posix.normalize('bar/foo../../'), 'bar/');
-assert.strictEqual(path.posix.normalize('bar/foo../..'), 'bar');
-assert.strictEqual(path.posix.normalize('bar/foo../../baz'), 'bar/baz');
-assert.strictEqual(path.posix.normalize('bar/foo../'), 'bar/foo../');
-assert.strictEqual(path.posix.normalize('bar/foo..'), 'bar/foo..');
-assert.strictEqual(path.posix.normalize('../foo../../../bar'), '../../bar');
-assert.strictEqual(path.posix.normalize('../.../.././.../../../bar'),
-                   '../../bar');
-assert.strictEqual(path.posix.normalize('../../../foo/../../../bar'),
-                   '../../../../../bar');
-assert.strictEqual(path.posix.normalize('../../../foo/../../../bar/../../'),
-                   '../../../../../../');
-assert.strictEqual(
-  path.posix.normalize('../foobar/barfoo/foo/../../../bar/../../'),
-  '../../'
-);
-assert.strictEqual(
-  path.posix.normalize('../.../../foobar/../../../bar/../../baz'),
-  '../../../../baz'
-);
-assert.strictEqual(path.posix.normalize('foo/bar\\baz'), 'foo/bar\\baz');
