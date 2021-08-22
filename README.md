@@ -8,7 +8,7 @@ towards a stable implementation.
 
 ## API
 
-* [dirname](https://nodejs.org/api/path.html#path_path_dirname_path) (posix).
+* [dirname](https://nodejs.org/api/path.html#path_path_dirname_path) (posix, windows).
 * [isAbsolute](https://nodejs.org/api/path.html#path_path_isabsolute_path) (posix).
 * [join](https://nodejs.org/api/path.html#path_path_join_paths) (posix).
 * [normalize](https://nodejs.org/api/path.html#path_path_normalize_path) (posix).
