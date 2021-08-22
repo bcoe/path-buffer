@@ -1,11 +1,26 @@
 const assert = require('assert');
 const CHAR_CODE_FORWARD_SLASH = '/'.charCodeAt(0);
+const CHAR_CODE_BACKWARD_SLASH = '\\'.charCodeAt(0);
 const CHAR_CODE_DOT = '.'.charCodeAt(0)
+const CHAR_CODE_LOWERCASE_A = 'a'.charCodeAt(0);
+const CHAR_CODE_UPPERCASE_A = 'A'.charCodeAt(0);
+const CHAR_CODE_LOWERCASE_Z = 'z'.charCodeAt(0);
+const CHAR_CODE_UPPERCASE_Z = 'Z'.charCodeAt(0);
+const CHAR_CODE_COLON = ':'.charCodeAt(0);
 const isUint8Array = () => true;
 const platformIsWin32 = (process.platform === 'win32');
 
+function isPathSeparator(code) {
+  return code === CHAR_CODE_FORWARD_SLASH || code === CHAR_CODE_BACKWARD_SLASH;
+}
+
 function isPosixPathSeparator(code) {
   return code === CHAR_CODE_FORWARD_SLASH;
+}
+
+function isWindowsDeviceRoot(code) {
+  return (code >= CHAR_CODE_UPPERCASE_A && code <= CHAR_CODE_UPPERCASE_Z) ||
+         (code >= CHAR_CODE_LOWERCASE_A && code <= CHAR_CODE_LOWERCASE_Z);
 }
 
 // Wraps a Buffer providing handling for both utf8 and utf8le byte encodings.
@@ -242,5 +257,108 @@ const posix = {
 };
 
 posix.posix = posix;
+
+const win32 = {
+  /**
+   * @param {Buffer} path
+   * @returns {string}
+   */
+   dirname(path) {
+    assert(isUint8Array(path));
+    path = UnicodeBufferWrapper.from(path);
+    const len = path.length;
+    if (len === 0)
+      return UnicodeBufferWrapper.from('.', path.encoding).buffer;
+    let rootEnd = -1;
+    let offset = 0;
+    const code = path.charCodeAt(0)
+
+    if (len === 1) {
+      // `path` contains just a path separator, exit early to avoid
+      // unnecessary work or a dot.
+      return isPathSeparator(code) ?
+        path.buffer :
+        UnicodeBufferWrapper.from('.', path.encoding).buffer;
+    }
+
+    // Try to match a root
+    if (isPathSeparator(code)) {
+      // Possible UNC root
+
+      rootEnd = offset = 1;
+
+      if (isPathSeparator(path.charCodeAt(1))) {
+        // Matched double path separator at beginning
+        let j = 2;
+        let last = j;
+        // Match 1 or more non-path separators
+        while (j < len &&
+               !isPathSeparator(path.charCodeAt(j))) {
+          j++;
+        }
+        if (j < len && j !== last) {
+          // Matched!
+          last = j;
+          // Match 1 or more path separators
+          while (j < len &&
+                 isPathSeparator(path.charCodeAt(j))) {
+            j++;
+          }
+          if (j < len && j !== last) {
+            // Matched!
+            last = j;
+            // Match 1 or more non-path separators
+            while (j < len &&
+                   !isPathSeparator(path.charCodeAt(j))) {
+              j++;
+            }
+            if (j === len) {
+              // We matched a UNC root only
+              return path.buffer;
+            }
+            if (j !== last) {
+              // We matched a UNC root with leftovers
+
+              // Offset by 1 to include the separator after the UNC root to
+              // treat it as a "normal root" on top of a (UNC) root
+              rootEnd = offset = j + 1;
+            }
+          }
+        }
+      }
+    // Possible device root
+    } else if (isWindowsDeviceRoot(code) &&
+               path.charCodeAt(1) === CHAR_CODE_COLON) {
+      rootEnd =
+        len > 2 && isPathSeparator(path.charCodeAt(2)) ? 3 : 2;
+      offset = rootEnd;
+    }
+
+    let end = -1;
+    let matchedSlash = true;
+    for (let i = len - 1; i >= offset; --i) {
+      if (isPathSeparator(path.charCodeAt(i))) {
+        if (!matchedSlash) {
+          end = i;
+          break;
+        }
+      } else {
+        // We saw the first non-path separator
+        matchedSlash = false;
+      }
+    }
+
+    if (end === -1) {
+      if (rootEnd === -1)
+        return UnicodeBufferWrapper.from('.', path.encoding).buffer;
+
+      end = rootEnd;
+    }
+    return path.slice(0, end).buffer;
+  },
+};
+
+posix.win32 = win32.win32 = win32;
+posix.posix = win32.posix = posix;
 
 module.exports = platformIsWin32 ? win32 : posix;
