@@ -73,11 +73,34 @@ const platformIsWin32 = (process.platform === 'win32');
 // Test isAbsolute().
 
 {
-  const isAbsoluteOriginal = path.posix.isAbsolute;
+  const isAbsoluteOriginalPosix = path.posix.isAbsolute;
+  const isAbsoluteOriginalWin32 = path.win32.isAbsolute;
   for (const encoding of ['utf8', 'utf16le']) {
     path.posix.isAbsolute = (path) => {
-      return isAbsoluteOriginal(Buffer.from(path, encoding));
+      return isAbsoluteOriginalPosix(Buffer.from(path, encoding));
     }
+    path.win32.isAbsolute = (path) => {
+      return isAbsoluteOriginalWin32(Buffer.from(path, encoding));
+    }
+    assert.strictEqual(path.win32.isAbsolute('/'), true);
+    assert.strictEqual(path.win32.isAbsolute('//'), true);
+    assert.strictEqual(path.win32.isAbsolute('//server'), true);
+    assert.strictEqual(path.win32.isAbsolute('//server/file'), true);
+    assert.strictEqual(path.win32.isAbsolute('\\\\server\\file'), true);
+    assert.strictEqual(path.win32.isAbsolute('\\\\server'), true);
+    assert.strictEqual(path.win32.isAbsolute('\\\\'), true);
+    assert.strictEqual(path.win32.isAbsolute('c'), false);
+    assert.strictEqual(path.win32.isAbsolute('c:'), false);
+    assert.strictEqual(path.win32.isAbsolute('c:\\'), true);
+    assert.strictEqual(path.win32.isAbsolute('c:/'), true);
+    assert.strictEqual(path.win32.isAbsolute('c://'), true);
+    assert.strictEqual(path.win32.isAbsolute('C:/Users/'), true);
+    assert.strictEqual(path.win32.isAbsolute('C:\\Users\\'), true);
+    assert.strictEqual(path.win32.isAbsolute('C:cwd/another'), false);
+    assert.strictEqual(path.win32.isAbsolute('C:cwd\\another'), false);
+    assert.strictEqual(path.win32.isAbsolute('directory/directory'), false);
+    assert.strictEqual(path.win32.isAbsolute('directory\\directory'), false);
+    
     assert.strictEqual(path.posix.isAbsolute('/home/foo'), true);
     assert.strictEqual(path.posix.isAbsolute('/home/foo/..'), true);
     assert.strictEqual(path.posix.isAbsolute('bar/'), false);
@@ -174,10 +197,15 @@ const platformIsWin32 = (process.platform === 'win32');
 // Test normalize().
 
 {
-  const normalizeOriginal = path.posix.normalize;
+  const normalizeOriginalPosix = path.posix.normalize;
+  const normalizeOriginalWin32 = path.win32.normalize;
   for (const encoding of ['utf8', 'utf16le']) {
     path.posix.normalize = (path) => {
-      const p = normalizeOriginal(Buffer.from(path, encoding));
+      const p = normalizeOriginalPosix(Buffer.from(path, encoding));
+      return p.toString(encoding);
+    }
+    path.win32.normalize = (path) => {
+      const p = normalizeOriginalWin32(Buffer.from(path, encoding));
       return p.toString(encoding);
     }
     assert.strictEqual(path.posix.normalize('./fixtures///b/../b/c.js'),
@@ -209,5 +237,43 @@ const platformIsWin32 = (process.platform === 'win32');
       '../../../../baz'
     );
     assert.strictEqual(path.posix.normalize('foo/bar\\baz'), 'foo/bar\\baz');
+
+    assert.strictEqual(path.win32.normalize('./fixtures///b/../b/c.js'),
+    'fixtures\\b\\c.js');
+    assert.strictEqual(path.win32.normalize('/foo/../../../bar'), '\\bar');
+    assert.strictEqual(path.win32.normalize('a//b//../b'), 'a\\b');
+    assert.strictEqual(path.win32.normalize('a//b//./c'), 'a\\b\\c');
+    assert.strictEqual(path.win32.normalize('a//b//.'), 'a\\b');
+    assert.strictEqual(path.win32.normalize('//server/share/dir/file.ext'),
+        '\\\\server\\share\\dir\\file.ext');
+    assert.strictEqual(path.win32.normalize('/a/b/c/../../../x/y/z'), '\\x\\y\\z');
+    assert.strictEqual(path.win32.normalize('C:'), 'C:.');
+    assert.strictEqual(path.win32.normalize('C:..\\abc'), 'C:..\\abc');
+    assert.strictEqual(path.win32.normalize('C:..\\..\\abc\\..\\def'),
+        'C:..\\..\\def');
+    assert.strictEqual(path.win32.normalize('C:\\.'), 'C:\\');
+    assert.strictEqual(path.win32.normalize('file:stream'), 'file:stream');
+    assert.strictEqual(path.win32.normalize('bar\\foo..\\..\\'), 'bar\\');
+    assert.strictEqual(path.win32.normalize('bar\\foo..\\..'), 'bar');
+    assert.strictEqual(path.win32.normalize('bar\\foo..\\..\\baz'), 'bar\\baz');
+    assert.strictEqual(path.win32.normalize('bar\\foo..\\'), 'bar\\foo..\\');
+    assert.strictEqual(path.win32.normalize('bar\\foo..'), 'bar\\foo..');
+    assert.strictEqual(path.win32.normalize('..\\foo..\\..\\..\\bar'),
+        '..\\..\\bar');
+    assert.strictEqual(path.win32.normalize('..\\...\\..\\.\\...\\..\\..\\bar'),
+        '..\\..\\bar');
+    assert.strictEqual(path.win32.normalize('../../../foo/../../../bar'),
+        '..\\..\\..\\..\\..\\bar');
+    assert.strictEqual(path.win32.normalize('../../../foo/../../../bar/../../'),
+        '..\\..\\..\\..\\..\\..\\');
+    assert.strictEqual(
+    path.win32.normalize('../foobar/barfoo/foo/../../../bar/../../'),
+    '..\\..\\'
+    );
+    assert.strictEqual(
+    path.win32.normalize('../.../../foobar/../../../bar/../../baz'),
+    '..\\..\\..\\..\\baz'
+    );
+    assert.strictEqual(path.win32.normalize('foo/bar\\baz'), 'foo\\bar\\baz');
   }
 }
