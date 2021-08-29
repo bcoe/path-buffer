@@ -111,87 +111,165 @@ const platformIsWin32 = (process.platform === 'win32');
 // Test join().
 
 {
-  // join allows set of relative paths to be joined.
   const failures = [];
-  const joinTests = [
-    [ [path.posix.join],
-      // Arguments                     result
-      [[['.', 'x/b', '..', '/b/c.js'], 'x/b/c.js'],
-      [[], '.'],
-      [['/.', 'x/b', '..', '/b/c.js'], '/x/b/c.js'],
-      [['/foo', '../../../bar'], '/bar'],
-      [['foo', '../../../bar'], '../../bar'],
-      [['foo/', '../../../bar'], '../../bar'],
-      [['foo/x', '../../../bar'], '../bar'],
-      [['foo/x', './bar'], 'foo/x/bar'],
-      [['foo/x/', './bar'], 'foo/x/bar'],
-      [['foo/x/', '.', 'bar'], 'foo/x/bar'],
-      [['./'], './'],
-      [['.', './'], './'],
-      [['.', '.', '.'], '.'],
-      [['.', './', '.'], '.'],
-      [['.', '/./', '.'], '.'],
-      [['.', '/////./', '.'], '.'],
-      [['.'], '.'],
-      [['', '.'], '.'],
-      [['', 'foo'], 'foo'],
-      [['foo', '/bar'], 'foo/bar'],
-      [['', '/foo'], '/foo'],
-      [['', '', '/foo'], '/foo'],
-      [['', '', 'foo'], 'foo'],
-      [['foo', ''], 'foo'],
-      [['foo/', ''], 'foo/'],
-      [['foo', '', '/bar'], 'foo/bar'],
-      [['./', '..', '/foo'], '../foo'],
-      [['./', '..', '..', '/foo'], '../../foo'],
-      [['.', '..', '..', '/foo'], '../../foo'],
-      [['', '..', '..', '/foo'], '../../foo'],
-      [['/'], '/'],
-      [['/', '.'], '/'],
-      [['/', '..'], '/'],
-      [['/', '..', '..'], '/'],
-      [[''], '.'],
-      [['', ''], '.'],
-      [[' /foo'], ' /foo'],
-      [[' ', 'foo'], ' /foo'],
-      [[' ', '.'], ' '],
-      [[' ', '/'], ' /'],
-      [[' ', ''], ' '],
-      [['/', 'foo'], '/foo'],
-      [['/', '/foo'], '/foo'],
-      [['/', '//foo'], '/foo'],
-      [['/', '', '/foo'], '/foo'],
-      [['', '/', 'foo'], '/foo'],
-      [['', '/', '/foo'], '/foo'],
+  const backslashRE = /\\/g;
+  const originalJoinPosix = path.posix.join;
+  const originalJoinWin32 = path.win32.join;
+  for (const encoding of ['utf8', 'utf16le']) {
+    path.posix.join = (...args) => {
+      const hasAnyPaths = args.length && args[0] !== '';
+      for (let i = 0; i < args.length; i++) {
+        args[i] = Buffer.from(args[i], hasAnyPaths ? encoding : undefined);
+      }
+      return originalJoinPosix.apply(originalJoinPosix, args).toString(
+        hasAnyPaths ? encoding : undefined
+      );
+    }
+    path.win32.join = (...args) => {
+      const hasAnyPaths = args.length && args[0] !== '';
+      for (let i = 0; i < args.length; i++) {
+        args[i] = Buffer.from(args[i], hasAnyPaths ? encoding : undefined);
+      }
+      return originalJoinWin32.apply(originalJoinWin32, args).toString(
+        hasAnyPaths ? encoding : undefined
+      );
+    }
+    const joinTests = [
+      [ [path.posix.join, path.win32.join],
+        // Arguments                     result
+        [[['.', 'x/b', '..', '/b/c.js'], 'x/b/c.js'],
+        [[], '.'],
+        [['/.', 'x/b', '..', '/b/c.js'], '/x/b/c.js'],
+        [['/foo', '../../../bar'], '/bar'],
+        [['foo', '../../../bar'], '../../bar'],
+        [['foo/', '../../../bar'], '../../bar'],
+        [['foo/x', '../../../bar'], '../bar'],
+        [['foo/x', './bar'], 'foo/x/bar'],
+        [['foo/x/', './bar'], 'foo/x/bar'],
+        [['foo/x/', '.', 'bar'], 'foo/x/bar'],
+        [['./'], './'],
+        [['.', './'], './'],
+        [['.', '.', '.'], '.'],
+        [['.', './', '.'], '.'],
+        [['.', '/./', '.'], '.'],
+        [['.', '/////./', '.'], '.'],
+        [['.'], '.'],
+        [['', '.'], '.'],
+        [['', 'foo'], 'foo'],
+        [['foo', '/bar'], 'foo/bar'],
+        [['', '/foo'], '/foo'],
+        [['', '', '/foo'], '/foo'],
+        [['', '', 'foo'], 'foo'],
+        [['foo', ''], 'foo'],
+        [['foo/', ''], 'foo/'],
+        [['foo', '', '/bar'], 'foo/bar'],
+        [['./', '..', '/foo'], '../foo'],
+        [['./', '..', '..', '/foo'], '../../foo'],
+        [['.', '..', '..', '/foo'], '../../foo'],
+        [['', '..', '..', '/foo'], '../../foo'],
+        [['/'], '/'],
+        [['/', '.'], '/'],
+        [['/', '..'], '/'],
+        [['/', '..', '..'], '/'],
+        [[''], '.'],
+        [['', ''], '.'],
+        [[' /foo'], ' /foo'],
+        [[' ', 'foo'], ' /foo'],
+        [[' ', '.'], ' '],
+        [[' ', '/'], ' /'],
+        [[' ', ''], ' '],
+        [['/', 'foo'], '/foo'],
+        [['/', '/foo'], '/foo'],
+        [['/', '//foo'], '/foo'],
+        [['/', '', '/foo'], '/foo'],
+        [['', '/', 'foo'], '/foo'],
+        [['', '/', '/foo'], '/foo'],
+        ],
       ],
-    ],
-  ];
-  joinTests.forEach((test) => {
-    if (!Array.isArray(test[0]))
-      test[0] = [test[0]];
-    for (const encoding of ['utf8', 'utf16le']) {
+    ];
+    
+    // Windows-specific join tests
+    joinTests.push([
+      path.win32.join,
+      joinTests[0][1].slice(0).concat(
+        [// Arguments                     result
+          // UNC path expected
+          [['//foo/bar'], '\\\\foo\\bar\\'],
+          [['\\/foo/bar'], '\\\\foo\\bar\\'],
+          [['\\\\foo/bar'], '\\\\foo\\bar\\'],
+          // UNC path expected - server and share separate
+          [['//foo', 'bar'], '\\\\foo\\bar\\'],
+          [['//foo/', 'bar'], '\\\\foo\\bar\\'],
+          [['//foo', '/bar'], '\\\\foo\\bar\\'],
+          // UNC path expected - questionable
+          [['//foo', '', 'bar'], '\\\\foo\\bar\\'],
+          [['//foo/', '', 'bar'], '\\\\foo\\bar\\'],
+          [['//foo/', '', '/bar'], '\\\\foo\\bar\\'],
+          // UNC path expected - even more questionable
+          [['', '//foo', 'bar'], '\\\\foo\\bar\\'],
+          [['', '//foo/', 'bar'], '\\\\foo\\bar\\'],
+          [['', '//foo/', '/bar'], '\\\\foo\\bar\\'],
+          // No UNC path expected (no double slash in first component)
+          [['\\', 'foo/bar'], '\\foo\\bar'],
+          [['\\', '/foo/bar'], '\\foo\\bar'],
+          [['', '/', '/foo/bar'], '\\foo\\bar'],
+          // No UNC path expected (no non-slashes in first component -
+          // questionable)
+          [['//', 'foo/bar'], '\\foo\\bar'],
+          [['//', '/foo/bar'], '\\foo\\bar'],
+          [['\\\\', '/', '/foo/bar'], '\\foo\\bar'],
+          [['//'], '\\'],
+          // No UNC path expected (share name missing - questionable).
+          [['//foo'], '\\foo'],
+          [['//foo/'], '\\foo\\'],
+          [['//foo', '/'], '\\foo\\'],
+          [['//foo', '', '/'], '\\foo\\'],
+          // No UNC path expected (too many leading slashes - questionable)
+          [['///foo/bar'], '\\foo\\bar'],
+          [['////foo', 'bar'], '\\foo\\bar'],
+          [['\\\\\\/foo/bar'], '\\foo\\bar'],
+          // Drive-relative vs drive-absolute paths. This merely describes the
+          // status quo, rather than being obviously right
+          [['c:'], 'c:.'],
+          [['c:.'], 'c:.'],
+          [['c:', ''], 'c:.'],
+          [['', 'c:'], 'c:.'],
+          [['c:.', '/'], 'c:.\\'],
+          [['c:.', 'file'], 'c:file'],
+          [['c:', '/'], 'c:\\'],
+          [['c:', 'file'], 'c:\\file'],
+        ]
+      ),
+    ]);
+    joinTests.forEach((test) => {
+      if (!Array.isArray(test[0]))
+        test[0] = [test[0]];
       test[0].forEach((join) => {
         test[1].forEach((test) => {
-          const hasAnyPaths = test[0].join('') !== '';
-          const t = test[0].map((p) => Buffer.from(p, encoding));
-          const actual = join.apply(null, t).toString(hasAnyPaths ? encoding : undefined);
+          const actual = join.apply(null, test[0]);
           const expected = test[1];
           // For non-Windows specific tests with the Windows join(), we need to try
           // replacing the slashes since the non-Windows specific tests' `expected`
           // use forward slashes
-          const os = 'posix';
-          if (actual !== expected) {
+          let actualAlt;
+          let os;
+          if (join === path.win32.join) {
+            actualAlt = actual.replace(backslashRE, '/');
+            os = 'win32';
+          } else {
+            os = 'posix';
+          }
+          if (actual !== expected && actualAlt !== expected) {
             const delimiter = test[0].map(JSON.stringify).join(',');
             const message = `path.${os}.join(${delimiter})\n  expect=${
               JSON.stringify(expected)}\n  actual=${JSON.stringify(actual)}`;
             failures.push(`\n${message}`);
-            throw Error(message);
           }
         });
       });
-    }
-  });
-  assert.strictEqual(failures.length, 0, failures.join(''));
+    });
+    assert.strictEqual(failures.length, 0, failures.join(''));
+  }
 }
 
 // Test normalize().

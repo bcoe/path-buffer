@@ -441,8 +441,7 @@ const win32 = {
       if (slashCount >= 2)
         joined = UnicodeBufferWrapper.concat([Buffer.from('\\', joined.encoding), joined.slice(slashCount, joined.length)]);
     }
-
-    return win32.normalize(joined);
+    return win32.normalize(joined.buffer);
   },
   /**
    * @param {Buffer} path
@@ -506,7 +505,8 @@ const win32 = {
                 Buffer.from('\\\\', path.encoding),
                 firstPart,
                 Buffer.from('\\', path.encoding),
-                path.slice(last, path.length)
+                path.slice(last, path.length),
+                Buffer.from('\\', path.encoding),
               ]).buffer;
             }
             if (j !== last) {
@@ -544,10 +544,11 @@ const win32 = {
         UnicodeBufferWrapper.from('\\', path.encoding),
         CHAR_CODE_BACKWARD_SLASH,
         isPathSeparator
-      ) :
-      Buffer.from('');
-    if (tail.length === 0 && !isAbsolute)
-      tail = Buffer.from('.', path.encoding);
+      ):
+      UnicodeBufferWrapper.from('');
+    if (tail.length === 0 && !isAbsolute) {
+      tail = UnicodeBufferWrapper.from('.', path.encoding);
+    }
     if (tail.length > 0 &&
         isPathSeparator(path.charCodeAt(len - 1))) {
       tail = UnicodeBufferWrapper.concat([tail, Buffer.from('\\', path.encoding)]);
