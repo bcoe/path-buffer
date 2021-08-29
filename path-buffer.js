@@ -253,7 +253,7 @@ const posix = {
       UnicodeBufferWrapper.concat([UnicodeBufferWrapper.from('/', path.encoding), path]).buffer :
       path.buffer;
   },
-  sep: '/',
+  sep: CHAR_CODE_FORWARD_SLASH,
 };
 
 posix.posix = posix;
@@ -356,6 +356,213 @@ const win32 = {
     }
     return path.slice(0, end).buffer;
   },
+  /**
+   * @param {Buffer} path
+   * @returns {boolean}
+   */
+  isAbsolute(path) {
+    assert(isUint8Array(path));
+    path = UnicodeBufferWrapper.from(path);
+    const len = path.length;
+    if (path.length === 0)
+      return false;
+    const code = path.charCodeAt(0);
+    return isPathSeparator(code) ||
+      // Possible device root
+      (len > 2 &&
+      isWindowsDeviceRoot(code) &&
+      path.charCodeAt(1) === CHAR_CODE_COLON &&
+      isPathSeparator(path.charCodeAt(2)));
+  },
+  /**
+   * @param {...Buffer} args
+   * @returns {Buffer}
+   */
+   join(...args) {
+    if (args.length === 0)
+      return Buffer.from('.');
+
+    let joined;
+    let firstPart;
+    for (let i = 0; i < args.length; ++i) {
+      let arg = args[i];
+      assert(isUint8Array(arg));
+      arg = UnicodeBufferWrapper.from(arg);
+      if (arg.length > 0) {
+        if (joined === undefined)
+          joined = firstPart = arg;
+        else
+          joined = UnicodeBufferWrapper.concat([joined, Buffer.from('\\', arg.encoding), arg]);
+      }
+    }
+
+    if (joined === undefined)
+      return Buffer.from('.');
+
+    // Make sure that the joined path doesn't start with two slashes, because
+    // normalize() will mistake it for a UNC path then.
+    //
+    // This step is skipped when it is very clear that the user actually
+    // intended to point at a UNC path. This is assumed when the first
+    // non-empty string arguments starts with exactly two slashes followed by
+    // at least one more non-slash character.
+    //
+    // Note that for normalize() to treat a path as a UNC path it needs to
+    // have at least 2 components, so we don't filter for that here.
+    // This means that the user can use join to construct UNC paths from
+    // a server name and a share name; for example:
+    //   path.join('//server', 'share') -> '\\\\server\\share\\')
+    let needsReplace = true;
+    let slashCount = 0;
+    if (isPathSeparator(firstPart.charCodeAt(0))) {
+      ++slashCount;
+      const firstLen = firstPart.length;
+      if (firstLen > 1 &&
+          isPathSeparator(firstPart.charCodeAt(1))) {
+        ++slashCount;
+        if (firstLen > 2) {
+          if (isPathSeparator(firstPart.charCodeAt(2)))
+            ++slashCount;
+          else {
+            // We matched a UNC path in the first part
+            needsReplace = false;
+          }
+        }
+      }
+    }
+    if (needsReplace) {
+      // Find any more consecutive slashes we need to replace
+      while (slashCount < joined.length &&
+             isPathSeparator(joined.charCodeAt(slashCount))) {
+        slashCount++;
+      }
+
+      // Replace the slashes if needed
+      if (slashCount >= 2)
+        joined = UnicodeBufferWrapper.concat([Buffer.from('\\', joined.encoding), joined.slice(slashCount, joined.length)]);
+    }
+    return win32.normalize(joined.buffer);
+  },
+  /**
+   * @param {Buffer} path
+   * @returns {Buffer}
+   */
+   normalize(path) {
+    assert(isUint8Array(path));
+    path = UnicodeBufferWrapper.from(path);
+    const len = path.length;
+    if (len === 0)
+      return Buffer.from('.');
+    let rootEnd = 0;
+    let device;
+    let isAbsolute = false;
+    const code = path.charCodeAt(0);
+
+    // Try to match a root
+    if (len === 1) {
+      // `path` contains just a single char, exit early to avoid
+      // unnecessary work
+      return isPosixPathSeparator(code) ? '\\' : path.buffer;
+    }
+    if (isPathSeparator(code)) {
+      // Possible UNC root
+
+      // If we started with a separator, we know we at least have an absolute
+      // path of some kind (UNC or otherwise)
+      isAbsolute = true;
+
+      if (isPathSeparator(path.charCodeAt(1))) {
+        // Matched double path separator at beginning
+        let j = 2;
+        let last = j;
+        // Match 1 or more non-path separators
+        while (j < len &&
+               !isPathSeparator(path.charCodeAt(j))) {
+          j++;
+        }
+        if (j < len && j !== last) {
+          const firstPart = path.slice(last, j);
+          // Matched!
+          last = j;
+          // Match 1 or more path separators
+          while (j < len &&
+                 isPathSeparator(path.charCodeAt(j))) {
+            j++;
+          }
+          if (j < len && j !== last) {
+            // Matched!
+            last = j;
+            // Match 1 or more non-path separators
+            while (j < len &&
+                   !isPathSeparator(path.charCodeAt(j))) {
+              j++;
+            }
+            if (j === len) {
+              // We matched a UNC root only
+              // Return the normalized version of the UNC root since there
+              // is nothing left to process
+              return UnicodeBufferWrapper.concat([
+                Buffer.from('\\\\', path.encoding),
+                firstPart,
+                Buffer.from('\\', path.encoding),
+                path.slice(last, path.length),
+                Buffer.from('\\', path.encoding),
+              ]).buffer;
+            }
+            if (j !== last) {
+              // We matched a UNC root with leftovers
+              device = UnicodeBufferWrapper.concat([
+                Buffer.from('\\\\', path.encoding),
+                firstPart,
+                Buffer.from('\\', path.encoding),
+                path.slice(last, j)
+              ]);
+              rootEnd = j;
+            }
+          }
+        }
+      } else {
+        rootEnd = 1;
+      }
+    } else if (isWindowsDeviceRoot(code) &&
+               path.charCodeAt(1) === CHAR_CODE_COLON) {
+      // Possible device root
+      device = path.slice(0, 2);
+      rootEnd = 2;
+      if (len > 2 && isPathSeparator(path.charCodeAt(2))) {
+        // Treat separator following drive name as an absolute path
+        // indicator
+        isAbsolute = true;
+        rootEnd = 3;
+      }
+    }
+
+    let tail = rootEnd < len ?
+      normalizeString(
+        path.slice(rootEnd, path.length),
+        !isAbsolute,
+        UnicodeBufferWrapper.from('\\', path.encoding),
+        CHAR_CODE_BACKWARD_SLASH,
+        isPathSeparator
+      ):
+      UnicodeBufferWrapper.from('');
+    if (tail.length === 0 && !isAbsolute) {
+      tail = UnicodeBufferWrapper.from('.', path.encoding);
+    }
+    if (tail.length > 0 &&
+        isPathSeparator(path.charCodeAt(len - 1))) {
+      tail = UnicodeBufferWrapper.concat([tail, Buffer.from('\\', path.encoding)]);
+    }
+    if (device === undefined) {
+      return isAbsolute ? UnicodeBufferWrapper.concat([Buffer.from('\\', path.encoding), tail]).buffer : tail.buffer;
+    }
+    if (isAbsolute) {
+      return UnicodeBufferWrapper.concat([device, Buffer.from('\\', path.encoding), tail]).buffer;
+    } else {
+      return UnicodeBufferWrapper.concat([device, tail]).buffer;
+    }
+  },
+  sep: CHAR_CODE_BACKWARD_SLASH,
 };
 
 posix.win32 = win32.win32 = win32;
