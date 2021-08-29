@@ -253,7 +253,7 @@ const posix = {
       UnicodeBufferWrapper.concat([UnicodeBufferWrapper.from('/', path.encoding), path]).buffer :
       path.buffer;
   },
-  sep: '/',
+  sep: CHAR_CODE_FORWARD_SLASH,
 };
 
 posix.posix = posix;
@@ -562,6 +562,7 @@ const win32 = {
       return UnicodeBufferWrapper.concat([device, tail]).buffer;
     }
   },
+  sep: CHAR_CODE_BACKWARD_SLASH,
 };
 
 posix.win32 = win32.win32 = win32;
