@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://www.github.com/bcoe/path-buffer/compare/v1.1.0...v1.2.0) (2021-08-29)
+
+
+### Features
+
+* **dirname:** add support for windows paths ([#5](https://www.github.com/bcoe/path-buffer/issues/5)) ([11c8f19](https://www.github.com/bcoe/path-buffer/commit/11c8f199bf535ce91373bedbd10db226b06e84a3))
+* **win32:** adds isAbsolute, join, normalize ([#7](https://www.github.com/bcoe/path-buffer/issues/7)) ([e5d585f](https://www.github.com/bcoe/path-buffer/commit/e5d585f26dc1443229696fc16757b8803fac1809))
+
 ## [1.1.0](https://www.github.com/bcoe/path-buffer/compare/v1.0.0...v1.1.0) (2021-08-15)
 
 
